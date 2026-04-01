@@ -1,7 +1,7 @@
 clearvars; clc; close all;
 tic
 advection_speed_range = [0.0165, 0.1125, 0.525];  % Food advection speed
-n_ensemble = 100;
+n_ensemble = 2;
 system_length = 3000;  % System length
 system_width = 20;     % System width
 threshold_density = 0.5; % Threshold to define turbulence
@@ -12,29 +12,28 @@ V = 5;                 % System size (affects noise level)
 t_nullcline = 1e4;     % Time to take snapshot for nullcline calculation
 
 % save the location of front and back edge of slugs for velocity computation
-front = zeros(time_steps/plot_interval,2,n_ensemble,length(advection_speed_range));  
+front = zeros(time_steps/plot_interval,2,n_ensemble,length(advection_speed_range));
 back = zeros(time_steps/plot_interval,2,n_ensemble,length(advection_speed_range));
 nullcline = zeros(system_length,2,n_ensemble);
 y_energy = zeros(system_length,7,10,n_ensemble);
 for i = 1:length(advection_speed_range)
 
     food_adv_speed = advection_speed_range(i);  % Food advection speed
-    
-    % plot_data_x = zeros(time_steps/plot_interval,system_length);    % Storage predator density data for plot 
-    % plot_data_y = zeros(time_steps/plot_interval,system_length);    % Storage prey density data for plot 
-    % plot_data_g = zeros(time_steps/plot_interval,system_length);    % Storage nutrient density data for plot 
-    % 
+
+    % plot_data_x = zeros(time_steps/plot_interval,system_length);    % Storage predator density data for plot
+    % plot_data_y = zeros(time_steps/plot_interval,system_length);    % Storage prey density data for plot
+    % plot_data_g = zeros(time_steps/plot_interval,system_length);    % Storage nutrient density data for plot
+    %
     for e = 1:n_ensemble
 
-        % Parameters value
-        D = 0.5;             % diffusion rate
-        d1 = 0.02;           % death rate of predator
-        d2 = 0.02;           % death rate of prey
-        p = 0.2;             % predation rate
-        m = 0.0002;          % mutation rate
-        b = 0.2;             % birth rate of prey
-        c = 0.04;            % competition rate
-        growth_rate = 4/9 * food_adv_speed^2; % growth rate of grass (food)
+        D = 0.125;           % diffusion rate  (paper: D_A = D_B = 0.125)
+        d1 = 0.02;           % death rate of predator  (paper: d_A = 0.02)
+        d2 = 0.02;           % death rate of prey      (paper: d_B = 0.02)
+        p = 0.05;            % predation rate          (paper: p = 0.05)
+        m = 0.0002;          % mutation rate           (paper: m = 0.0002)
+        b = 0.05;            % birth rate of prey      (paper: b = 0.05)
+        c = 0.04;            % competition rate        (paper: c_A = c_B = 0.04)
+        growth_rate = 20/9 * food_adv_speed^2; % growth rate of grass (paper: g = 20U^2/9)
 
         % Rescaling all parameters by food advection speed
         D = rescale_by_speed(D,food_adv_speed);
@@ -62,18 +61,19 @@ for i = 1:length(advection_speed_range)
         y(:, mid-15:mid+15) = rand(system_width, 31) > 2/5;
         g(:, mid+15:end) = 0;
 
-
-        y_loss_p = zeros(system_width,system_length);
-        y_loss_d = zeros(system_width,system_length);
-        y_loss_c = zeros(system_width,system_length);
-        y_gain_b = zeros(system_width,system_length);
-        y_loss_m = zeros(system_width,system_length);
-        y_diffuse = zeros(system_width,system_length);
-        x_diffuse = zeros(system_width,system_length);
-        y_last_step = y;
-        
         % Time evolution
         for t = 1:time_steps
+
+            
+            y_loss_p = zeros(system_width,system_length);
+            y_loss_d = zeros(system_width,system_length);
+            y_loss_c = zeros(system_width,system_length);
+            y_gain_b = zeros(system_width,system_length);
+            y_loss_m = zeros(system_width,system_length);
+            y_diffuse = zeros(system_width,system_length);
+            x_diffuse = zeros(system_width,system_length);
+            y_last_step = y;  % snapshot of y at the start of this step
+
             g(:,1) = site_capacity; % Refill food on left boundary
 
             for k = 1:system_width * system_length
@@ -125,33 +125,35 @@ for i = 1:length(advection_speed_range)
                 plot_data_x(t / plot_interval, :) = mean(x);  %average over the width of the pipe
                 plot_data_y(t / plot_interval, :) = mean(y);
                 plot_data_g(t / plot_interval, :) = mean(g);
-            
+
                 pos = find(mean(y)>=threshold_density);    % find out the position of turbulent sites
-                   
+
                 if length(pos)>1
                     front(t/plot_interval,:,e,i) = [t/food_adv_speed,pos(1)];
                     back(t/plot_interval,:,e,i) = [t/food_adv_speed,pos(end)];
                 end
-                
+
             end
 
             if t == t_nullcline
                 nullcline(:,1,e) = mean(g)';
                 nullcline(:,2,e) = mean(y)';
-
-                y_energy(:,1,time_steps-t+1,e) = mean(y_gain_b);   % 1: gain from birth
-                y_energy(:,2,time_steps-t+1,e) = mean(y_loss_p); % 2: loss from predation
-                y_energy(:,3,time_steps-t+1,e) = mean(y_loss_c); % 3: loss from competition
-                y_energy(:,4,time_steps-t+1,e) = mean(y_loss_d);  % 4: loss from death
-                y_energy(:,5,time_steps-t+1,e) = mean(y_loss_m);  % 5: loss from mutation
-                y_energy(:,6,time_steps-t+1,e) = mean(y_diffuse);  %6: gain and loss from diffustion
-                y_energy(:,7,time_steps-t+1,e) = mean(y_last_step-y);  %net gain in y
-                
             end
+
+            
+            if t == time_steps
+                y_energy(:,1,time_steps-t+1,e) = mean(y_gain_b)';   % 1: gain from birth
+                y_energy(:,2,time_steps-t+1,e) = mean(y_loss_p)'; % 2: loss from predation
+                y_energy(:,3,time_steps-t+1,e) = mean(y_loss_c)'; % 3: loss from competition
+                y_energy(:,4,time_steps-t+1,e) = mean(y_loss_d)';  % 4: loss from death
+                y_energy(:,5,time_steps-t+1,e) = mean(y_loss_m)';  % 5: loss from mutation
+                y_energy(:,6,time_steps-t+1,e) = mean(y_diffuse)';  %6: gain and loss from diffusion
+                y_energy(:,7,time_steps-t+1,e) = mean(y_last_step-y)';  %net gain in y
+            end
+
         end
         y_energy_save = sum(y_energy,3);
-        % plot_space_time_data(system_length, time_steps, plot_interval, food_adv_speed, plot_data_x, plot_data_y, plot_data_g)
-    end
+   end
 end
 [front_velocity_mean,front_velocity_std,back_velocity_mean,back_velocity_std] = calculate_front_velocity(front, back, advection_speed_range, plot_interval);
 mean_nullcline = plot_nullcline(nullcline);
@@ -170,7 +172,7 @@ function [grid, y_diffuse] = diffuse(grid, jx, jy, D, width, length, y_diffuse)
         [jx_new, jy_new] = get_neighbor(jx, jy, dir, width, length);
         grid(jx_new, jy_new) = grid(jx_new, jy_new) + 1;
         grid(jx, jy) = grid(jx, jy) - 1;
-        
+
         y_diffuse(jx_new,jy_new) = y_diffuse(jx_new,jy_new)+1;
         y_diffuse(jx,jy) = y_diffuse(jx,jy)-1;
     end
@@ -182,7 +184,7 @@ function [grid, food, y_gain_b] = reproduce(grid, food, jx, jy, b, V, width, len
     if rand() < 1 - exp(-b * grid(jx, jy) * food(jx_new, jy_new) / V)
         grid(jx_new, jy_new) = grid(jx_new, jy_new) + 1;
         food(jx_new, jy_new) = max(0, food(jx_new, jy_new) - 1);
-        
+
         y_gain_b(jx_new,jy_new)=y_gain_b(jx_new,jy_new)+1;
     end
 end
@@ -193,8 +195,7 @@ function [x, y, y_loss_p] = predation(x, y, jx, jy, p, V, width, length, y_loss_
     if rand() < 1 - exp(-p * x(jx, jy) * y(jx_new, jy_new) / V)
         x(jx_new, jy_new) = x(jx_new, jy_new) + 1;
         y(jx_new, jy_new) = max(0, y(jx_new, jy_new) - 1);
-
-        y_loss_p(jx_new, jy_new)=y_loss_p(jx,jy)-1;
+        y_loss_p(jx_new, jy_new) = y_loss_p(jx_new, jy_new) - 1;
     end
 end
 
@@ -208,10 +209,10 @@ end
 
 function [jx_new, jy_new] = get_neighbor(jx, jy, dir, width, length)
     switch dir  %periodic boundary conditions for all four boundaries
-        case 1, jx_new = mod(jx - 2, width) + 1; jy_new = jy;   % Move up 
-        case 2, jx_new = mod(jx, width) + 1; jy_new = jy;       % Move down 
-        case 3, jy_new = mod(jy - 2, length) + 1; jx_new = jx;  % Move left 
-        case 4, jy_new = mod(jy, length) + 1; jx_new = jx;      % Move right 
+        case 1, jx_new = mod(jx - 2, width) + 1; jy_new = jy;   % Move up
+        case 2, jx_new = mod(jx, width) + 1; jy_new = jy;       % Move down
+        case 3, jy_new = mod(jy - 2, length) + 1; jx_new = jx;  % Move left
+        case 4, jy_new = mod(jy, length) + 1; jx_new = jx;      % Move right
     end
 end
 
@@ -239,40 +240,40 @@ end
 
 function [front_velocity_mean,front_velocity_std,back_velocity_mean,back_velocity_std] = calculate_front_velocity(front, back, advection_speed_range, plot_interval)
     [num_time_steps, ~, n_ensemble, num_speeds] = size(front);
-    
+
     % Initialize storage for velocity statistics
     front_velocity_mean = zeros(num_speeds, 1);
     front_velocity_std = zeros(num_speeds, 1);
     back_velocity_mean = zeros(num_speeds, 1);
     back_velocity_std = zeros(num_speeds, 1);
-    
+
     % Loop over advection speeds
     for i = 1:num_speeds
         front_velocities = zeros(n_ensemble,1);
         back_velocities = zeros(n_ensemble,1);
-        
+
         for e = 1:n_ensemble
             time_diff = diff(squeeze(front(:,1,e,i))) * plot_interval; % Compute time differences
             space_diff_front = diff(squeeze(front(:,2,e,i))); % Compute space differences
-            space_diff_back = diff(squeeze(back(:,2,e,i))); 
-            
+            space_diff_back = diff(squeeze(back(:,2,e,i)));
+
             valid_idx = time_diff > 0; % Ensure valid division
-            
+
             % Compute velocities
             velocity_front = space_diff_front(valid_idx) ./ time_diff(valid_idx);
             velocity_back = space_diff_back(valid_idx) ./ time_diff(valid_idx);
-            
+
             front_velocities(e) = mean(velocity_front);
             back_velocities(e) = mean(velocity_back);
         end
-        
+
         % Compute mean and std
         front_velocity_mean(i) = mean(front_velocities);
         front_velocity_std(i) = std(front_velocities);
         back_velocity_mean(i) = mean(back_velocities);
         back_velocity_std(i) = std(back_velocities);
     end
-    
+
     % Plot results
     figure;
     errorbar(advection_speed_range, front_velocity_mean, front_velocity_std, 'o', 'LineWidth', 1.5);
@@ -295,21 +296,21 @@ function mean_nullcline = plot_nullcline(nullcline)
     %
     % The function computes the mean nullcline over the ensembles and
     % plots both nutrient and prey density as functions of spatial position.
-    
+
     % Determine the spatial size and number of ensembles
     [system_length, numVars, n_ensemble] = size(nullcline);
-    
+
     % Check that we have exactly two variables (g and y)
     if numVars ~= 2
         error('The second dimension of nullcline must be 2 (nutrient and prey)');
     end
-    
+
     % Average over ensembles
     mean_nullcline = mean(nullcline, 3);  % size: system_length x 2
-    
+
     % Create spatial coordinate (assuming unit spacing)
     x_axis = 1:system_length;
-    
+
     % Plotting
     figure;
     subplot(2,1,1)
@@ -350,33 +351,33 @@ function plot_y_energy(y_energy)
     % The third dimension is (optionally) time or another index.
     % The function first sums (or averages) over the third dimension and over ensembles,
     % then plots the resulting profiles for each contribution.
-    
+
     % Get the size of the data
     [system_length, numContributions, T, n_ensemble] = size(y_energy);
-    
+
     % For this plot, we sum over the third dimension (time or other index)
     % and average over ensembles.
     y_energy_sum = sum(y_energy, 3);  % now size: (system_length x 7 x n_ensemble)
     y_energy_avg = mean(y_energy_sum, 3);  % now size: (system_length x 7)
-    
+
     % Create spatial coordinate
     x_axis = 1:system_length;
-    
+
     % Define labels for the contributions
     energy_labels = {'Birth Gain', 'Predation Loss', 'Competition Loss', ...
                      'Death Loss', 'Mutation Loss', 'Diffusion', 'Net Gain'};
-    
+
     % Plot each contribution in a subplot or as multiple curves in one figure.
     % Here, we plot all contributions in one figure for comparison.
     figure;
     hold on;
     colors = lines(numContributions);
     for idx = 1:numContributions
-        plot(x_axis, y_energy_avg(:, idx), 'Color', colors(idx,:), 'LineWidth', 2); 
+        plot(x_axis, y_energy_avg(:, idx), 'Color', colors(idx,:), 'LineWidth', 2);
         hold on;
     end
     xlabel('Spatial Position');
-    ylabel('Energy Contribution (summed over time)');
+    ylabel('Energy Contribution (per time step)');
     title('Spatial Profiles of Energy Gain and Loss for Prey (y)');
     legend(energy_labels, 'Location', 'Best');
     grid on;
